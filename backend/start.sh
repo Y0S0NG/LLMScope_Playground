@@ -1,14 +1,12 @@
 #!/bin/bash
-# Production startup script for LLMScope Playground
+set -e
 
-set -e  # Exit on error
+echo "Starting LLMScope Playground Backend..."
 
-echo "🚀 Starting LLMScope Playground..."
+# Initialize database
+echo "Initializing database..."
+python init_db.py
 
-# Run database migrations
-echo "📦 Running database migrations..."
-alembic upgrade head
-
-# Start the FastAPI server
-echo "✅ Starting server on port ${PORT:-8001}..."
-exec uvicorn app.main:app --host ${HOST:-0.0.0.0} --port ${PORT:-8001}
+# Start the application
+echo "Starting uvicorn server..."
+exec uvicorn app.main:app --host 0.0.0.0 --port $PORT
