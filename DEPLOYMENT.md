@@ -16,7 +16,266 @@ This guide covers deploying the LLMScope Playground to various hosting platforms
 
 ## Quick Deploy Options
 
-### Option 1: Railway (Recommended - Easiest)
+### Option 1: AWS Elastic Beanstalk (Free Tier Available)
+
+AWS Elastic Beanstalk provides a managed platform that handles infrastructure provisioning, load balancing, and auto-scaling. Perfect for production deployments with the option to use AWS Free Tier.
+
+**Prerequisites:**
+- AWS Account (free tier available)
+- AWS CLI installed
+- EB CLI installed
+
+**Cost:** Free tier includes 750 hours/month of t2.micro/t3.micro instances (enough for both backend + frontend), 20GB RDS storage, 5GB S3 storage.
+
+#### Step 1: Install AWS EB CLI
+
+```bash
+# macOS
+brew install awsebcli
+
+# Linux/Windows (via pip)
+pip install awsebcli --upgrade --user
+
+# Verify installation
+eb --version
+```
+
+#### Step 2: Configure AWS Credentials
+
+```bash
+# Configure AWS credentials
+aws configure
+# Enter your AWS Access Key ID
+# Enter your AWS Secret Access Key
+# Default region: us-east-1 (or your preferred region)
+# Default output format: json
+```
+
+#### Step 3: Create RDS PostgreSQL Database (Free Tier)
+
+1. Go to [AWS RDS Console](https://console.aws.amazon.com/rds/)
+2. Click "Create database"
+3. Select:
+   - **Engine**: PostgreSQL
+   - **Version**: PostgreSQL 15.x or later
+   - **Templates**: Free tier
+   - **DB instance identifier**: llmscope-db
+   - **Master username**: postgres
+   - **Master password**: [your-secure-password]
+   - **DB instance class**: db.t3.micro (free tier eligible)
+   - **Storage**: 20 GB (free tier max)
+   - **Public access**: Yes (for initial setup, restrict later)
+   - **VPC security group**: Create new
+4. Click "Create database"
+5. Wait 5-10 minutes for database to be available
+6. Note down the **Endpoint** (e.g., `llmscope-db.xxxxx.us-east-1.rds.amazonaws.com`)
+
+**Connection String Format:**
+```
+postgresql://postgres:[password]@[endpoint]:5432/postgres
+```
+
+#### Step 4: Deploy Backend API
+
+```bash
+cd backend
+
+# Initialize Elastic Beanstalk application
+eb init -p python-3.11 llmscope-backend --region us-east-1
+
+# Create environment (free tier t3.micro)
+eb create llmscope-backend-env \
+  --instance-type t3.micro \
+  --single
+
+# Set environment variables
+eb setenv \
+  DATABASE_URL="postgresql://postgres:[password]@[rds-endpoint]:5432/postgres" \
+  ANTHROPIC_API_KEY="your-anthropic-api-key" \
+  SECRET_KEY="$(openssl rand -hex 32)" \
+  PORT=8000 \
+  HOST=0.0.0.0 \
+  PLAYGROUND_CORS_ORIGINS="*"
+
+# Deploy the application
+eb deploy
+
+# Open in browser to test
+eb open
+```
+
+**Verify backend deployment:**
+```bash
+# Get the backend URL
+BACKEND_URL=$(eb status | grep "CNAME" | awk '{print $2}')
+curl https://$BACKEND_URL/health
+```
+
+#### Step 5: Deploy Frontend
+
+```bash
+cd ../frontend
+
+# Update API endpoint in your frontend code (if needed)
+# Edit src/config.ts or .env to point to your backend URL
+
+# Initialize Elastic Beanstalk application
+eb init -p node.js-18 llmscope-frontend --region us-east-1
+
+# Create environment (free tier t3.micro)
+eb create llmscope-frontend-env \
+  --instance-type t3.micro \
+  --single
+
+# Set environment variable for backend API
+eb setenv \
+  VITE_API_URL="https://[your-backend-url].elasticbeanstalk.com"
+
+# Deploy the application
+eb deploy
+
+# Open in browser
+eb open
+```
+
+#### Step 6: Configure Security Groups (Important!)
+
+After initial deployment, secure your RDS database:
+
+1. Go to RDS Console → Your Database → VPC Security Groups
+2. Edit Inbound Rules:
+   - Remove the rule allowing `0.0.0.0/0`
+   - Add rule: PostgreSQL, Port 5432, Source: [Your EB environment security group]
+3. This ensures only your Elastic Beanstalk application can access the database
+
+#### Step 7: Set Up Custom Domain (Optional)
+
+1. Go to Route 53 or your domain registrar
+2. Create CNAME records:
+   - `api.yourdomain.com` → `[backend-env].elasticbeanstalk.com`
+   - `app.yourdomain.com` → `[frontend-env].elasticbeanstalk.com`
+3. Configure HTTPS in EB Console (free with AWS Certificate Manager)
+
+#### Updating Your Application
+
+```bash
+# Backend updates
+cd backend
+eb deploy
+
+# Frontend updates
+cd frontend
+eb deploy
+```
+
+#### Monitoring and Logs
+
+```bash
+# View recent logs
+eb logs
+
+# Stream logs in real-time
+eb logs --stream
+
+# SSH into instance
+eb ssh
+
+# View environment status
+eb status
+
+# View environment health
+eb health
+```
+
+#### Cost Optimization Tips
+
+- **Free Tier Limits:**
+  - 750 hours/month of t2.micro or t3.micro EC2 instances
+  - 20 GB RDS storage
+  - 5 GB S3 storage
+  - 750 hours/month RDS Single-AZ db.t3.micro
+
+- **Stay Within Free Tier:**
+  - Use `--single` flag (single instance, no load balancer)
+  - Use t3.micro instance type
+  - Keep RDS storage under 20GB
+  - Delete unused environments: `eb terminate [env-name]`
+
+- **After Free Tier (12 months):**
+  - Backend: ~$8-10/month (t3.micro)
+  - Frontend: ~$8-10/month (t3.micro)
+  - RDS: ~$15-20/month (db.t3.micro)
+  - Total: ~$30-40/month
+
+#### Troubleshooting
+
+**Database Connection Issues:**
+```bash
+# Test database connectivity from EB instance
+eb ssh
+python3
+>>> import psycopg2
+>>> conn = psycopg2.connect("your-database-url")
+>>> conn.close()
+```
+
+**Migration Errors:**
+```bash
+# SSH into instance and run migrations manually
+eb ssh
+cd /var/app/current
+source /var/app/venv/*/bin/activate
+alembic upgrade head
+```
+
+**Application Not Starting:**
+```bash
+# Check logs
+eb logs --all
+
+# Common issues:
+# - Incorrect DATABASE_URL format
+# - Missing environment variables
+# - Python version mismatch
+```
+
+**Port Issues:**
+- Elastic Beanstalk expects your app on port 8000 by default
+- Backend Procfile is configured for port 8000
+- Frontend Procfile is configured for port 8080
+
+#### Clean Up Resources
+
+To avoid charges after testing:
+
+```bash
+# Terminate backend environment
+cd backend
+eb terminate llmscope-backend-env
+
+# Terminate frontend environment
+cd ../frontend
+eb terminate llmscope-frontend-env
+
+# Delete RDS database
+aws rds delete-db-instance \
+  --db-instance-identifier llmscope-db \
+  --skip-final-snapshot
+```
+
+#### AWS Free Tier Checklist
+
+- [ ] Use t3.micro instance type (or t2.micro)
+- [ ] Use Single instance deployment (--single flag)
+- [ ] Use db.t3.micro for RDS (or db.t2.micro)
+- [ ] Keep RDS storage at 20GB or less
+- [ ] Monitor usage in AWS Billing Dashboard
+- [ ] Set up billing alerts at $1, $5, $10 thresholds
+- [ ] Terminate unused environments promptly
+
+---
+
+### Option 2: Railway (Recommended - Easiest)
 
 [![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/new)
 

@@ -35,7 +35,18 @@ class Settings(BaseSettings):
 
     # Security
     secret_key: str = os.getenv("SECRET_KEY", "change-me-in-production")
-    cors_origins: list = ["*"]  # Configure for production
+
+    # CORS - handle both string and list formats
+    @property
+    def cors_origins(self) -> list:
+        """Parse CORS origins from environment variable or use default"""
+        cors_env = os.getenv("PLAYGROUND_CORS_ORIGINS", os.getenv("CORS_ORIGINS", "*"))
+        if isinstance(cors_env, str):
+            # Handle comma-separated string or single value
+            if cors_env == "*":
+                return ["*"]
+            return [origin.strip() for origin in cors_env.split(",")]
+        return cors_env if isinstance(cors_env, list) else ["*"]
 
     # AI Provider
     anthropic_api_key: Optional[str] = os.getenv("ANTHROPIC_API_KEY", None)

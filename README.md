@@ -159,6 +159,7 @@ All configuration via environment variables:
 ## Deployment
 
 See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed deployment guides for:
+- **AWS Elastic Beanstalk** (Free Tier available) - [Quick Start Guide](AWS_DEPLOYMENT.md)
 - Railway
 - Render
 - Heroku

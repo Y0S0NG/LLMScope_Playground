@@ -9,9 +9,16 @@ import type {
   EventResponse,
 } from '../types';
 
+// Get API URL from environment variable or use relative path for development
+const API_BASE_URL = import.meta.env.VITE_API_URL
+  ? `${import.meta.env.VITE_API_URL}/api/v1`
+  : '/api/v1'; // Fallback to proxy for development
+
+console.log('API Base URL:', API_BASE_URL);
+
 // Create axios instance
 const apiClient = axios.create({
-  baseURL: '/api/v1', // Vite proxy will handle this
+  baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -54,7 +61,10 @@ export const resetCurrentSession = async (): Promise<ResetSessionResponse> => {
 };
 
 export const getHealth = async (): Promise<HealthResponse> => {
-  const response = await axios.get<HealthResponse>('/health');
+  const healthURL = import.meta.env.VITE_API_URL
+    ? `${import.meta.env.VITE_API_URL}/health`
+    : '/health';
+  const response = await axios.get<HealthResponse>(healthURL);
   return response.data;
 };
 
